@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Naija Vanguard</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0e1116; color:#e8eaed; font-family:'Segoe UI', system-ui, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  #wrap { position:relative; width:min(960px,100vw); }
+  canvas { width:100%; height:auto; display:block; background:#141a21; border:1px solid #2a3340; border-radius:8px; cursor:crosshair; touch-action:none; }
+  .hud { position:absolute; top:0; left:0; right:0; display:flex; gap:18px; padding:10px 14px; font-size:13px; color:#9aa4b0; pointer-events:none; z-index:2; }
+  .hud b { color:#e8eaed; font-weight:600; font-variant-numeric:tabular-nums; }
+  .hud .sp { flex:1; }
+  #hpbar { width:130px; height:8px; background:#2a3340; border-radius:99px; overflow:hidden; }
+  #hpfill { height:100%; background:#2f9e63; border-radius:99px; transition:width .15s, background .3s; }
+  #board { position:absolute; top:36px; left:14px; font-size:12px; color:#9aa4b0; z-index:2; pointer-events:none; line-height:1.7; }
+  #bn { position:absolute; top:34%; left:0; right:0; text-align:center; font-size:20px; font-weight:600; display:none; pointer-events:none; z-index:2; text-shadow:0 2px 8px #000; }
+  #down { position:absolute; bottom:14%; left:0; right:0; text-align:center; font-size:16px; color:#f0a0a0; display:none; pointer-events:none; z-index:2; }
+  .overlay { position:absolute; inset:0; background:rgba(10,13,17,.94); display:flex; align-items:center; justify-content:center; text-align:center; z-index:5; border-radius:8px; }
+  .panel { max-width:460px; padding:26px; }
+  .panel h1 { font-size:26px; font-weight:700; letter-spacing:.5px; }
+  .panel h1 span { color:#2f9e63; }
+  .panel p { margin-top:10px; font-size:14px; color:#9aa4b0; line-height:1.6; }
+  .panel input[type=text] { width:100%; margin-top:14px; padding:10px 12px; border-radius:8px; border:1px solid #2a3340; background:#1a212b; color:#e8eaed; font-size:14px; }
+  .btn { display:block; width:100%; margin-top:10px; padding:11px; border:none; border-radius:8px; background:#2f9e63; color:#08110c; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .btn.alt { background:#232c38; color:#e8eaed; }
+  .btn.warn { background:#b3261e; color:#fff; }
+  .btn:hover { filter:brightness(1.12); }
+  .row { display:flex; gap:10px; }
+  .row .btn { margin-top:10px; }
+  #hostWait { display:none; }
+  #over { display:none; }
+  .note { font-size:12px !important; color:#6b7684 !important; }
+  a { color:#2f9e63; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="hud">
+    <div>Wave <b id="wavenum">1</b></div>
+    <div>Score <b id="score">0</b></div>
+    <div>Lives <b id="lives">3</b></div>
+    <div class="sp"></div>
+    <div>HP</div>
+    <div id="hpbar"><div id="hpfill" style="width:100%"></div></div>
+  </div>
+  <div id="board"></div>
+  <canvas id="cv"></canvas>
+  <div id="bn"></div>
+  <div id="down"></div>
+
+  <div class="overlay" id="ov">
+    <div class="panel">
+      <h1>Naija <span>Vanguard</span></h1>
+      <p>The Jackals — a masked outlaw gang — are raiding your town. You are the youth guard. Hold the line, wave after wave.</p>
+      <input type="text" id="pname" maxlength="12" placeholder="Your name (default: Defender)">
+      <button class="btn" id="btnSolo">Solo mission</button>
+      <button class="btn alt" id="btnCoop">Local co-op (2 players, one keyboard)</button>
+      <button class="btn alt" id="btnHost">Host online room</button>
+      <div class="row">
+        <input type="text" id="joinCode" maxlength="4" placeholder="CODE" style="margin-top:10px;text-transform:uppercase;">
+        <button class="btn" id="btnJoin" style="flex:1">Join</button>
+      </div>
+      <button class="btn alt" id="btnAdmin">Admin panel (tune the game)</button>
+      <p class="note">Online play needs internet (free PeerJS broker) and works best on HTTPS hosting. The host shares the 4-letter room code. All factions in this game are fictional.</p>
+    </div>
+  </div>
+
+  <div class="overlay" id="hostWait">
+    <div class="panel">
+      <h1>Room code: <span id="roomCode">----</span></h1>
+      <p>Share this code with your friends — they pick <b>Join</b> on the title screen. The game starts now; they can drop in mid-battle.</p>
+      <button class="btn" id="btnCopy">Copy code</button>
+      <button class="btn warn" id="btnCloseRoom">Close room</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="over">
+    <div class="panel">
+      <h1 id="overTitle">Mission report</h1>
+      <p id="overText"></p>
+      <button class="btn" id="btnAgain">Back to menu</button>
+    </div>
+  </div>
+</div>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

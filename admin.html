@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Naija Vanguard — Admin panel</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0e1116; color:#e8eaed; font-family:'Segoe UI', system-ui, sans-serif; padding:24px; }
+  .wrap { max-width:720px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:700; }
+  h1 span { color:#2f9e63; }
+  p.sub { color:#9aa4b0; font-size:13px; margin-top:6px; line-height:1.6; }
+  h2 { font-size:15px; margin:26px 0 10px; color:#2f9e63; font-weight:600; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:10px; }
+  label { display:block; font-size:12px; color:#9aa4b0; margin-bottom:4px; }
+  input[type=number], textarea { width:100%; padding:8px 10px; border-radius:8px; border:1px solid #2a3340; background:#1a212b; color:#e8eaed; font-size:13px; font-family:inherit; }
+  textarea { min-height:120px; font-family:Consolas, monospace; font-size:12px; }
+  .btn { display:inline-block; margin:24px 8px 0 0; padding:10px 18px; border:none; border-radius:8px; background:#2f9e63; color:#08110c; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; }
+  .btn.alt { background:#232c38; color:#e8eaed; }
+  .btn.warn { background:#b3261e; color:#fff; }
+  #status { margin-top:14px; font-size:13px; color:#2f9e63; min-height:18px; }
+  .note { font-size:12px; color:#6b7684; margin-top:8px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Naija Vanguard <span>admin panel</span></h1>
+  <p class="sub">Tune the game, design enemy types and custom waves. Changes are saved in this browser (localStorage) and apply the next time you start a mission. Use export/import to copy a config between machines — or paste exported values into <code>DEFAULT_CONFIG</code> in <code>game.js</code> to change the defaults for everyone who plays your hosted copy.</p>
+
+  <h2>Core tuning</h2>
+  <div class="grid" id="fields"></div>
+
+  <h2>Weapons (JSON array)</h2>
+  <textarea id="weapons" spellcheck="false"></textarea>
+  <p class="note">Each weapon: { "name", "cooldown" (frames between shots), "damage", "dmgPerWave", "bulletSpeed", "pellets", "spread" (radians), "infinite" (true = no ammo needed) or "startAmmo" + "maxAmmo", "color" }. Weapon 1 is the default rifle and should stay infinite.</p>
+
+  <h2>Difficulties (JSON array)</h2>
+  <textarea id="difficulties" spellcheck="false"></textarea>
+  <p class="note">Each: { "name", "enemyHpMult", "enemySpeedMult", "enemyCountMult", "lives" }. The menu dropdown lists them in order.</p>
+
+  <h2>Maps / levels (JSON array)</h2>
+  <textarea id="maps" spellcheck="false"></textarea>
+  <p class="note">Each: { "name", "tint" (hex background), "walls": [{ "x", "y", "w", "h" }] }. The player advances to the next map every "waves per level" waves.</p>
+
+  <h2>Enemy types (JSON array)</h2>
+  <textarea id="enemyTypes" spellcheck="false"></textarea>
+  <p class="note">Each type: { "name", "color" (hex), "hpMult", "speedMult", "size" (px radius) }. Raiders and brutes included by default — edit freely, add more.</p>
+
+  <h2>Custom waves (JSON array, optional)</h2>
+  <textarea id="customWaves" spellcheck="false">[]</textarea>
+  <p class="note">Each entry overrides one wave: { "count": 12, "type": 0, "hpMult": 1.5, "speedMult": 1.2 }. Waves beyond your list use the normal generator. Keep it [] to disable.</p>
+
+  <div>
+    <button class="btn" id="save">Save config</button>
+    <button class="btn alt" id="exp">Export JSON</button>
+    <button class="btn alt" id="impBtn">Import JSON</button>
+    <button class="btn warn" id="reset">Reset to defaults</button>
+    <a class="btn alt" href="index.html" style="text-decoration:none;">Back to game</a>
+    <input type="file" id="impFile" accept=".json" style="display:none;">
+  </div>
+  <div id="status"></div>
+</div>
+<script>
+var DEFAULT_CONFIG = {
+  playerSpeed: 2.7, playerHP: 100, fireCooldown: 8, bulletSpeed: 8,
+  bulletDamage: 10, bulletDamagePerWave: 2,
+  enemyBaseHP: 18, enemyHPPerWave: 5,
+  enemyBaseSpeed: 1.05, enemySpeedPerWave: 0.09, enemyMaxSpeedBonus: 0.9,
+  enemiesBaseCount: 3, enemiesPerWave: 2,
+  medkitChance: 0.16, medkitHeal: 25,
+  contactDamage: 10, contactCooldownFrames: 35,
+  scorePerKill: 10, waveBonus: 50,
+  respawnFrames: 180, lives: 3, levelWaves: 5
+};
+var LABELS = {
+  playerSpeed:'Player speed', playerHP:'Player health', fireCooldown:'Frames between shots (lower = faster)',
+  bulletSpeed:'Bullet speed', bulletDamage:'Base bullet damage', bulletDamagePerWave:'Bonus damage per wave',
+  enemyBaseHP:'Enemy base HP', enemyHPPerWave:'Enemy HP growth per wave',
+  enemyBaseSpeed:'Enemy base speed', enemySpeedPerWave:'Enemy speed growth per wave', enemyMaxSpeedBonus:'Enemy max bonus speed',
+  enemiesBaseCount:'Enemies in wave 1', enemiesPerWave:'Extra enemies per wave',
+  medkitChance:'Medkit drop chance (0-1)', medkitHeal:'Medkit heal amount',
+  contactDamage:'Enemy contact damage', contactCooldownFrames:'Invulnerability frames after a hit',
+  scorePerKill:'Score per kill', waveBonus:'Score bonus per wave cleared',
+  respawnFrames:'Respawn delay (frames at 60fps)', lives:'Lives (solo / co-op)',
+  levelWaves:'Waves per level (before the map changes)'
+};
+var cfg;
+try { var s = localStorage.getItem('naijaConfig'); cfg = s ? Object.assign({}, DEFAULT_CONFIG, JSON.parse(s)) : null; } catch (e) { cfg = null; }
+if (!cfg) { cfg = Object.assign({}, DEFAULT_CONFIG); }
+var DEFAULT_WEAPONS = [
+  { name: 'Rifle',    cooldown: 8,  damage: 10, dmgPerWave: 2, bulletSpeed: 8,  pellets: 1, spread: 0.06, infinite: true,  color: '#e0a100' },
+  { name: 'SMG',      cooldown: 4,  damage: 6,  dmgPerWave: 1, bulletSpeed: 8,  pellets: 1, spread: 0.15, startAmmo: 120, maxAmmo: 360, color: '#3b82f6' },
+  { name: 'Shotgun',  cooldown: 26, damage: 8,  dmgPerWave: 1, bulletSpeed: 7,  pellets: 6, spread: 0.5,  startAmmo: 30,  maxAmmo: 90,  color: '#d64545' },
+  { name: 'Marksman', cooldown: 34, damage: 45, dmgPerWave: 5, bulletSpeed: 14, pellets: 1, spread: 0.01, startAmmo: 20,  maxAmmo: 60,  color: '#8b5cf6' }
+];
+var DEFAULT_DIFFS = [
+  { name: 'Easy',   enemyHpMult: 0.7,  enemySpeedMult: 0.85, enemyCountMult: 0.75, lives: 5 },
+  { name: 'Normal', enemyHpMult: 1,    enemySpeedMult: 1,    enemyCountMult: 1,    lives: 3 },
+  { name: 'Hard',   enemyHpMult: 1.45, enemySpeedMult: 1.15, enemyCountMult: 1.3,  lives: 2 }
+];
+var DEFAULT_MAPS = [
+  { name: 'Town square', tint: '#141a21', walls: [
+    { x: 120, y: 80, w: 150, h: 80 }, { x: 380, y: 100, w: 110, h: 70 }, { x: 660, y: 70, w: 140, h: 90 },
+    { x: 170, y: 340, w: 130, h: 100 }, { x: 540, y: 360, w: 160, h: 90 }, { x: 800, y: 300, w: 80, h: 120 } ] },
+  { name: 'Market district', tint: '#1b1611', walls: [
+    { x: 80, y: 90, w: 100, h: 140 }, { x: 250, y: 60, w: 90, h: 90 }, { x: 250, y: 330, w: 200, h: 70 },
+    { x: 500, y: 150, w: 90, h: 200 }, { x: 660, y: 80, w: 150, h: 80 }, { x: 700, y: 360, w: 120, h: 90 } ] },
+  { name: 'Riverside', tint: '#0f1a1e', walls: [
+    { x: 60, y: 200, w: 200, h: 60 }, { x: 350, y: 80, w: 80, h: 160 }, { x: 350, y: 360, w: 80, h: 130 },
+    { x: 530, y: 200, w: 220, h: 60 }, { x: 820, y: 90, w: 70, h: 140 }, { x: 820, y: 330, w: 70, h: 140 } ] }
+];
+var enemyTypes = [], customWaves = [], weapons = null, difficulties = null, maps = null;
+try { var s2 = localStorage.getItem('naijaConfig'); if (s2) { var o = JSON.parse(s2);
+  enemyTypes = o.enemyTypes || enemyTypes; customWaves = o.customWaves || customWaves;
+  weapons = o.weapons || weapons; difficulties = o.difficulties || difficulties; maps = o.maps || maps; } } catch (e) {}
+if (!enemyTypes.length) enemyTypes = [
+  { name: 'raider', color: '#d64545', hpMult: 1, speedMult: 1, size: 11 },
+  { name: 'brute', color: '#b91c1c', hpMult: 2.2, speedMult: 0.7, size: 15 }
+];
+if (!weapons || !weapons.length) weapons = DEFAULT_WEAPONS;
+if (!difficulties || !difficulties.length) difficulties = DEFAULT_DIFFS;
+if (!maps || !maps.length) maps = DEFAULT_MAPS;
+
+var fields = document.getElementById('fields');
+Object.keys(DEFAULT_CONFIG).forEach(function (k) {
+  var wrap = document.createElement('div');
+  wrap.innerHTML = '<label>' + LABELS[k] + '</label><input type="number" step="any" id="f_' + k + '" value="' + cfg[k] + '">';
+  fields.appendChild(wrap);
+});
+document.getElementById('enemyTypes').value = JSON.stringify(enemyTypes, null, 2);
+document.getElementById('customWaves').value = JSON.stringify(customWaves, null, 2);
+document.getElementById('weapons').value = JSON.stringify(weapons, null, 2);
+document.getElementById('difficulties').value = JSON.stringify(difficulties, null, 2);
+document.getElementById('maps').value = JSON.stringify(maps, null, 2);
+
+function status(t, bad) { var el = document.getElementById('status'); el.textContent = t; el.style.color = bad ? '#d64545' : '#2f9e63'; }
+function collect() {
+  var out = {};
+  Object.keys(DEFAULT_CONFIG).forEach(function (k) {
+    var v = parseFloat(document.getElementById('f_' + k).value);
+    if (isNaN(v)) throw new Error('Bad number for ' + LABELS[k]);
+    out[k] = v;
+  });
+  out.enemyTypes = JSON.parse(document.getElementById('enemyTypes').value || '[]');
+  out.customWaves = JSON.parse(document.getElementById('customWaves').value || '[]');
+  out.weapons = JSON.parse(document.getElementById('weapons').value || '[]');
+  out.difficulties = JSON.parse(document.getElementById('difficulties').value || '[]');
+  out.maps = JSON.parse(document.getElementById('maps').value || '[]');
+  if (!Array.isArray(out.enemyTypes) || !out.enemyTypes.length) throw new Error('Need at least one enemy type.');
+  out.enemyTypes.forEach(function (t, i) {
+    if (!t.name || !t.color) throw new Error('Enemy type ' + i + ' needs a name and color.');
+    t.hpMult = +t.hpMult || 1; t.speedMult = +t.speedMult || 1; t.size = +t.size || 11;
+  });
+  (out.customWaves || []).forEach(function (w, i) {
+    if (!w.count || w.count < 1) throw new Error('Custom wave ' + i + ' needs a count.');
+    w.type = w.type || 0; w.hpMult = +w.hpMult || 1; w.speedMult = +w.speedMult || 1;
+  });
+  if (!Array.isArray(out.weapons) || !out.weapons.length) throw new Error('Need at least one weapon.');
+  out.weapons.forEach(function (w, i) {
+    if (!w.name) throw new Error('Weapon ' + i + ' needs a name.');
+    w.cooldown = +w.cooldown || 8; w.damage = +w.damage || 10; w.dmgPerWave = +w.dmgPerWave || 0;
+    w.bulletSpeed = +w.bulletSpeed || 8; w.pellets = Math.max(1, +w.pellets || 1);
+    w.spread = +w.spread || 0; w.color = w.color || '#e0a100';
+    if (w.infinite) { delete w.startAmmo; delete w.maxAmmo; }
+    else { w.startAmmo = +w.startAmmo || 30; w.maxAmmo = +w.maxAmmo || w.startAmmo * 3; }
+  });
+  if (!out.weapons[0].infinite) throw new Error('Weapon 1 (the default) should be infinite, or players can run dry with no unlock.');
+  if (!Array.isArray(out.difficulties) || !out.difficulties.length) throw new Error('Need at least one difficulty.');
+  out.difficulties.forEach(function (d, i) {
+    if (!d.name) throw new Error('Difficulty ' + i + ' needs a name.');
+    d.enemyHpMult = +d.enemyHpMult || 1; d.enemySpeedMult = +d.enemySpeedMult || 1;
+    d.enemyCountMult = +d.enemyCountMult || 1; d.lives = Math.max(1, +d.lives || 3);
+  });
+  if (!Array.isArray(out.maps) || !out.maps.length) throw new Error('Need at least one map.');
+  out.maps.forEach(function (m, i) {
+    if (!m.name || !m.tint || !Array.isArray(m.walls) || !m.walls.length) throw new Error('Map ' + i + ' needs name, tint and walls.');
+    m.walls.forEach(function (w, j) {
+      ['x','y','w','h'].forEach(function (k) { if (isNaN(+w[k])) throw new Error('Map ' + i + ' wall ' + j + ' needs numeric ' + k + '.'); });
+    });
+  });
+  out.playerColors = ['#2f9e63', '#3b82f6', '#8b5cf6', '#e0a100'];
+  return out;
+}
+document.getElementById('save').onclick = function () {
+  try { localStorage.setItem('naijaConfig', JSON.stringify(collect())); status('Saved. Start a new mission in the game to apply it.'); }
+  catch (e) { status(e.message, true); }
+};
+document.getElementById('reset').onclick = function () {
+  localStorage.removeItem('naijaConfig'); location.reload();
+};
+document.getElementById('exp').onclick = function () {
+  try {
+    var blob = new Blob([JSON.stringify(collect(), null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'naijaConfig.json'; a.click();
+    status('Exported naijaConfig.json');
+  } catch (e) { status(e.message, true); }
+};
+document.getElementById('impBtn').onclick = function () { document.getElementById('impFile').click(); };
+document.getElementById('impFile').onchange = function (e) {
+  var f = e.target.files[0]; if (!f) return;
+  var r = new FileReader();
+  r.onload = function () {
+    try {
+      var o = JSON.parse(r.result);
+      localStorage.setItem('naijaConfig', JSON.stringify(o));
+      status('Imported. Reloading panel...'); setTimeout(function () { location.reload(); }, 600);
+    } catch (err) { status('Import failed: ' + err.message, true); }
+  };
+  r.readAsText(f);
+};
+</script>
+</body>
+</html>
